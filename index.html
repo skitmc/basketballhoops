@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Basketball Hoops</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: 'Arial Black', sans-serif; color: white; overflow: hidden; }
+        #game-container { position: relative; border: 4px solid #333; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+        canvas { background: linear-gradient(to bottom, #1e3c72, #2a5298); cursor: crosshair; }
+        #hud { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 2px 2px #000; }
+        .stats { font-size: 28px; margin-bottom: 5px; }
+        #multiplier { color: #ffcc00; font-size: 20px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="hud">
+            <div class="stats">SCORE: <span id="score">0</span></div>
+            <div id="multiplier">STREAK: x<span id="streak">1</span></div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const streakEl = document.getElementById('streak');
+    const multDiv = document.getElementById('multiplier');
+
+    canvas.width = 900;
+    canvas.height = 600;
+
+    // Physics Constants
+    const gravity = 0.45;
+    const friction = 0.98;
+    const bounce = 0.7;
+
+    let score = 0;
+    let streak = 0;
+    
+    let ball = {
+        x: 150, y: 450, r: 22, 
+        vx: 0, vy: 0, 
+        isFlying: false,
+        touchedRim: false
+    };
+
+    const hoop = {
+        backboardX: 820,
+        backboardY: 100,
+        backboardW: 10,
+        backboardH: 120,
+        rimX: 740,
+        rimY: 200,
+        rimW: 80
+    };
+
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. Draw Environment
+        ctx.fillStyle = '#555';
+        ctx.fillRect(0, 550, canvas.width, 50); // Floor
+
+        // 2. Draw Hoop Assembly
+        ctx.fillStyle = 'white';
+        ctx.fillRect(hoop.backboardX, hoop.backboardY, hoop.backboardW, hoop.backboardH); // Backboard
+        
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(hoop.rimX, hoop.rimY);
+        ctx.lineTo(hoop.rimX + hoop.rimW, hoop.rimY);
+        ctx.stroke(); // Rim
+
+        // 3. Draw Trajectory Line (While dragging)
+        if (isDragging) {
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.beginPath();
+            ctx.moveTo(ball.x, ball.y);
+            ctx.lineTo(ball.x + (dragStart.x - currentMousePos.x) * 0.15 * 20, ball.y + (dragStart.y - currentMousePos.y) * 0.15 * 20);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // 4. Draw Ball
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+        ctx.fillStyle = (streak >= 3) ? '#ff4500' : '#ff8c00'; // Changes color when "On Fire"
+        ctx.fill();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        update();
+        requestAnimationFrame(draw);
+    }
+
+    let currentMousePos = { x: 0, y: 0 };
+
+    function update() {
+        if (ball.isFlying) {
+            ball.vy += gravity;
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            // Backboard Collision
+            if (ball.x + ball.r > hoop.backboardX && ball.y > hoop.backboardY && ball.y < hoop.backboardY + hoop.backboardH) {
+                ball.vx *= -bounce;
+                ball.x = hoop.backboardX - ball.r;
+                ball.touchedRim = true;
+            }
+
+            // Rim Collision (Simplified Hitbox)
+            if (ball.y + ball.r > hoop.rimY - 5 && ball.y - ball.r < hoop.rimY + 5) {
+                if (Math.abs(ball.x - hoop.rimX) < 10 || Math.abs(ball.x - (hoop.rimX + hoop.rimW)) < 10) {
+                    ball.vy *= -bounce;
+                    ball.touchedRim = true;
+                }
+            }
+
+            // Scoring Logic
+            if (ball.vy > 0 && ball.y > hoop.rimY && ball.y < hoop.rimY + 20 && ball.x > hoop.rimX && ball.x < hoop.rimX + hoop.rimW) {
+                let points = ball.touchedRim ? 2 : 3; // Swish bonus
+                streak++;
+                score += points * (streak >= 3 ? 2 : 1);
+                
+                scoreEl.innerText = score;
+                streakEl.innerText = streak;
+                if(streak >= 3) multDiv.style.display = 'block';
+                
+                resetBall();
+            }
+
+            // Out of bounds
+            if (ball.y > canvas.height || ball.x > canvas.width || ball.x < 0) {
+                streak = 0;
+                multDiv.style.display = 'none';
+                resetBall();
+            }
+        }
+    }
+
+    function resetBall() {
+        ball.isFlying = false;
+        ball.touchedRim = false;
+        ball.x = 150;
+        ball.y = 450;
+        ball.vx = 0;
+        ball.vy = 0;
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        if (!ball.isFlying) {
+            isDragging = true;
+            dragStart = { x: e.clientX, y: e.clientY };
+        }
+    });
+
+    window.addEventListener('mousemove', e => {
+        currentMousePos = { x: e.clientX, y: e.clientY };
+    });
+
+    window.addEventListener('mouseup', e => {
+        if (isDragging) {
+            ball.vx = (dragStart.x - e.clientX) * 0.12;
+            ball.vy = (dragStart.y - e.clientY) * 0.12;
+            ball.isFlying = true;
+            isDragging = false;
+        }
+    });
+
+    draw();
+</script>
+</body>
+</html>
