@@ -2,63 +2,66 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Basketball Hoops: Stars Edition</title>
+    <title>Basketball Hoops: Street Stars</title>
     <style>
-        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-        #game-container { position: relative; border: 8px solid #222; border-radius: 10px; box-shadow: 0 0 100px rgba(255,140,0,0.3); }
-        canvas { background: #333; cursor: none; }
-        #scoreboard {
-            position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; 
-            gap: 50px; color: white; font-size: 40px; font-weight: 900; text-shadow: 2px 2px #000;
-            pointer-events: none;
+        body { margin: 0; background: #050505; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Arial Black', sans-serif; overflow: hidden; }
+        #game-wrap { position: relative; border: 4px solid #333; box-shadow: 0 0 80px rgba(0, 150, 255, 0.2); }
+        canvas { background: #0a0a0a; cursor: none; }
+        #hud {
+            position: absolute; top: 0; width: 100%; display: flex; justify-content: space-between; 
+            padding: 20px 40px; box-sizing: border-box; color: #fff; font-size: 32px; pointer-events: none;
+            text-shadow: 0 0 10px #000;
         }
-        .team-name { font-size: 14px; opacity: 0.8; text-align: center; display: block; }
+        .msg { position: absolute; width: 100%; text-align: center; top: 100px; color: #00f2ff; font-size: 50px; opacity: 0; transition: 0.3s; }
     </style>
 </head>
 <body>
 
-    <div id="game-container">
-        <div id="scoreboard">
-            <div><span class="team-name">PLAYER</span> <span id="pScore">0</span></div>
-            <div style="color: #ff8c00; font-size: 20px; align-self: center;">VS</div>
-            <div><span id="bScore">0</span> <span class="team-name">BOT</span></div>
+    <div id="game-wrap">
+        <div id="hud">
+            <div style="color: #00f2ff;">YOU: <span id="pScore">0</span></div>
+            <div style="color: #ff0055;">BOT: <span id="bScore">0</span></div>
         </div>
+        <div id="announcer" class="msg">STEAL!</div>
         <canvas id="gameCanvas"></canvas>
     </div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-canvas.width = 1100;
+const announcer = document.getElementById('announcer');
+
+canvas.width = 1000;
 canvas.height = 550;
 
-const gravity = 0.5;
-const floorY = 480;
+const gravity = 0.4;
+const floorY = 470;
 
 let keys = {};
 window.addEventListener('keydown', e => {
-    if(e.code === 'KeyW' && !keys['KeyW']) handleJump(player);
-    if(e.code === 'KeyX' && !keys['KeyX']) shoot(player);
+    if(e.code === 'KeyW') handleJump(player);
+    if(e.code === 'KeyX') handleAction(player);
     keys[e.code] = true;
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
 
 class Player {
-    constructor(x, color, name) {
-        this.x = x; this.y = floorY - 80;
-        this.w = 35; this.h = 80;
+    constructor(x, color, isBot = false) {
+        this.x = x; this.y = floorY - 90;
+        this.w = 40; this.h = 90;
         this.vx = 0; this.vy = 0;
         this.color = color;
-        this.name = name;
+        this.isBot = isBot;
         this.jumpCount = 0;
         this.hasBall = false;
+        this.actionTimer = 0; // For steal/block animation
     }
 
     update() {
-        if (this === player) {
-            if (keys['KeyA']) this.vx = -6;
-            else if (keys['KeyD']) this.vx = 6;
-            else this.vx *= 0.85;
+        if (!this.isBot) {
+            if (keys['KeyA']) this.vx = -7;
+            else if (keys['KeyD']) this.vx = 7;
+            else this.vx *= 0.8;
         }
 
         this.x += this.vx;
@@ -72,30 +75,49 @@ class Player {
             this.jumpCount = 0;
         }
         this.x = Math.max(0, Math.min(canvas.width - this.w, this.x));
+        if (this.actionTimer > 0) this.actionTimer--;
     }
 
     draw() {
-        // Player Body (Jersey Style)
+        ctx.save();
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.beginPath();
+        ctx.ellipse(this.x + this.w/2, floorY, 20, 5, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        // Body Glow
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        
+        // Character Body
         ctx.fillStyle = this.color;
         ctx.fillRect(this.x, this.y, this.w, this.h);
-        ctx.fillStyle = "rgba(0,0,0,0.2)";
-        ctx.fillRect(this.x, this.y + 40, this.w, 40); // Shorts
         
+        // "Action" Visual (Steal/Block Swipe)
+        if (this.actionTimer > 0) {
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.arc(this.x + this.w/2, this.y + 20, 50, -0.5, 0.5);
+            ctx.stroke();
+        }
+
         // Head
-        ctx.fillStyle = "#ffdbac";
-        ctx.fillRect(this.x + 5, this.y - 30, 25, 30);
+        ctx.fillStyle = "#f1c27d";
+        ctx.fillRect(this.x + 5, this.y - 35, 30, 35);
+        ctx.restore();
     }
 }
 
 const ball = {
-    x: 550, y: floorY - 20, r: 12, vx: 0, vy: 0,
-    owner: null,
-    cooldown: 0,
+    x: 500, y: 200, r: 14, vx: 0, vy: 0,
+    owner: null, cooldown: 0,
     update() {
         if (this.cooldown > 0) this.cooldown--;
         if (this.owner) {
-            this.x = this.owner.x + (this.owner.vx >= 0 ? 45 : -10);
-            this.y = this.owner.y + 40 + Math.sin(Date.now()/100) * 15;
+            this.x = this.owner.x + (this.owner.vx >= 0 ? 45 : -5);
+            this.y = this.owner.y + 40 + Math.sin(Date.now()/80) * 15;
         } else {
             this.vy += gravity;
             this.x += this.vx;
@@ -105,135 +127,160 @@ const ball = {
                 this.vy *= -0.6;
                 this.vx *= 0.8;
             }
-            if (this.x < 0 || this.x > canvas.width) this.vx *= -0.8;
+            if (this.x < 0 || this.x > canvas.width) this.vx *= -0.7;
         }
     },
     draw() {
+        ctx.save();
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = "#ff8c00";
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
         ctx.fillStyle = "#ff8c00";
         ctx.fill();
-        ctx.strokeStyle = "#000";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // Ball lines
-        ctx.beginPath();
-        ctx.moveTo(this.x - this.r, this.y);
-        ctx.lineTo(this.x + this.r, this.y);
-        ctx.stroke();
+        ctx.restore();
     }
 };
 
-const player = new Player(200, '#0055ff', 'YOU');
-const bot = new Player(850, '#ff3300', 'BOT');
+const player = new Player(150, '#00f2ff');
+const bot = new Player(800, '#ff0055', true);
 let pScore = 0, bScore = 0;
 
 function handleJump(p) {
     if (p.jumpCount < 2) {
-        p.vy = -12;
+        p.vy = -11;
         p.jumpCount++;
     }
 }
 
-function shoot(p) {
-    if (!p.hasBall) return;
-    ball.owner = null;
-    p.hasBall = false;
-    ball.cooldown = 30;
+function handleAction(p) {
+    if (p.hasBall) {
+        // SHOOTING
+        ball.owner = null;
+        p.hasBall = false;
+        ball.cooldown = 40;
+        let targetX = (p === player) ? 930 : 70;
+        let dist = targetX - p.x;
+        ball.vx = dist * 0.035; // Softer throw
+        ball.vy = -12 + (Math.abs(dist) * -0.005);
+    } else {
+        // STEALING / BLOCKING
+        p.actionTimer = 10;
+        let opponent = (p === player) ? bot : player;
+        let d = Math.sqrt((p.x - opponent.x)**2 + (p.y - opponent.y)**2);
+        
+        if (d < 80 && opponent.hasBall) {
+            opponent.hasBall = false;
+            ball.owner = null;
+            ball.vx = (p.x < opponent.x ? -5 : 5);
+            ball.vy = -5;
+            ball.cooldown = 20;
+            showMsg("STEAL!");
+        }
+    }
+}
 
-    // Fixed Pro-Shot Logic: calculates arc based on target hoop
-    let targetHoopX = (p === player) ? 1020 : 80;
-    let dist = targetHoopX - p.x;
-    
-    ball.vx = dist * 0.045; // Automatic distance calculation
-    ball.vy = -14 + (Math.abs(dist) * -0.01); // Height based on distance
+function showMsg(txt) {
+    announcer.innerText = txt;
+    announcer.style.opacity = 1;
+    setTimeout(() => announcer.style.opacity = 0, 1000);
 }
 
 function drawCourt() {
-    // Floor (Wood Texture)
-    let grad = ctx.createLinearGradient(0, floorY, 0, floorY + 70);
-    grad.addColorStop(0, '#e8b97d');
-    grad.addColorStop(1, '#bc8f5b');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, floorY, canvas.width, 70);
-    
-    // Glossy Finish
-    ctx.fillStyle = "rgba(255,255,255,0.1)";
-    ctx.fillRect(0, floorY, canvas.width, 10);
+    // Ground
+    let floorGrad = ctx.createLinearGradient(0, floorY, 0, canvas.height);
+    floorGrad.addColorStop(0, '#111');
+    floorGrad.addColorStop(1, '#000');
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0, floorY, canvas.width, canvas.height - floorY);
 
-    // Lines
-    ctx.strokeStyle = "rgba(255,255,255,0.7)";
-    ctx.lineWidth = 4;
-    ctx.strokeRect(0, floorY, canvas.width, 0); // Baseline
-    ctx.beginPath(); ctx.moveTo(canvas.width/2, floorY); ctx.lineTo(canvas.width/2, floorY+70); ctx.stroke(); // Half
-    
-    // 3-Point Arcs
-    ctx.beginPath(); ctx.arc(0, 300, 350, -Math.PI/2, Math.PI/2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(canvas.width, 300, 350, Math.PI/2, -Math.PI/2); ctx.stroke();
+    // Neon Lines
+    ctx.strokeStyle = "rgba(0, 242, 255, 0.3)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, floorY); ctx.lineTo(canvas.width, floorY);
+    ctx.stroke();
 
-    drawHoop(80, 250, true); // Left
-    drawHoop(1020, 250, false); // Right
+    // 3pt Lines
+    ctx.beginPath(); ctx.arc(0, floorY-150, 300, -Math.PI/2, Math.PI/2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(1000, floorY-150, 300, Math.PI/2, -Math.PI/2); ctx.stroke();
+
+    drawHoop(70, 220, true);
+    drawHoop(930, 220, false);
 }
 
 function drawHoop(x, y, isLeft) {
-    // Backboard (Glass style)
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
-    ctx.fillRect(isLeft ? x-20 : x, y-80, 20, 120);
-    ctx.strokeStyle = "white";
-    ctx.strokeRect(isLeft ? x-20 : x, y-80, 20, 120);
+    // Backboard
+    ctx.fillStyle = "rgba(255,255,255,0.1)";
+    ctx.fillRect(isLeft ? x-15 : x, y-70, 15, 100);
+    ctx.strokeStyle = "cyan";
+    ctx.strokeRect(isLeft ? x-15 : x, y-70, 15, 100);
 
     // Rim
-    ctx.strokeStyle = "#ff4500";
-    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#ff0055";
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(isLeft ? x : x-60, y);
-    ctx.lineTo(isLeft ? x+60 : x, y);
+    ctx.moveTo(isLeft ? x : x-50, y);
+    ctx.lineTo(isLeft ? x+50 : x, y);
     ctx.stroke();
 
-    // Net (Physics wave)
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.setLineDash([4, 4]);
-    ctx.lineWidth = 2;
-    for(let i=0; i<6; i++) {
+    // Animated Net
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.setLineDash([2, 2]);
+    for(let i=0; i<5; i++) {
         ctx.beginPath();
-        let nx = isLeft ? x + (i*10) : x - 60 + (i*10);
+        let nx = isLeft ? x + (i*10) : x - 50 + (i*10);
         ctx.moveTo(nx, y);
-        ctx.quadraticCurveTo(nx + Math.sin(Date.now()/300)*5, y+20, nx, y+50);
+        let sway = Math.sin(Date.now()/200 + i) * 3;
+        ctx.quadraticCurveTo(nx + sway, y + 20, nx, y + 40);
         ctx.stroke();
     }
     ctx.setLineDash([]);
 }
 
 function updateBot() {
+    let dToBall = ball.x - bot.x;
     if (!ball.owner && ball.cooldown === 0) {
-        if (ball.x > bot.x) bot.vx = 4; else bot.vx = -4;
+        bot.vx = dToBall > 0 ? 4 : -4;
     } else if (bot.hasBall) {
-        if (bot.x > 300) bot.vx = -5;
-        else { bot.vx = 0; shoot(bot); }
+        if (bot.x > 350) bot.vx = -5;
+        else { bot.vx = 0; handleAction(bot); }
+    } else if (player.hasBall) {
+        // Aggressive Bot: tries to steal
+        let dToPlayer = player.x - bot.x;
+        bot.vx = dToPlayer > 0 ? 5 : -5;
+        if (Math.abs(dToPlayer) < 60) handleAction(bot);
     }
     bot.update();
 }
 
 function checkScoring() {
-    // Player scores in Right Hoop
-    if (ball.vy > 0 && ball.x > 980 && ball.x < 1060 && Math.abs(ball.y - 250) < 15) {
-        pScore++; resetBall();
+    // You score Right (930)
+    if (ball.vy > 0 && ball.x > 900 && ball.x < 960 && Math.abs(ball.y - 220) < 15) {
+        pScore++; showMsg("SWISH!"); resetBall();
     }
-    // Bot scores in Left Hoop
-    if (ball.vy > 0 && ball.x < 120 && ball.x > 40 && Math.abs(ball.y - 250) < 15) {
-        bScore++; resetBall();
+    // Bot scores Left (70)
+    if (ball.vy > 0 && ball.x < 100 && ball.x > 40 && Math.abs(ball.y - 220) < 15) {
+        bScore++; showMsg("SCORE!"); resetBall();
     }
 }
 
 function resetBall() {
-    ball.x = 550; ball.y = 100; ball.vx = 0; ball.vy = 0;
+    ball.x = 500; ball.y = 100; ball.vx = 0; ball.vy = 0;
     ball.owner = null; player.hasBall = false; bot.hasBall = false;
     document.getElementById('pScore').innerText = pScore;
     document.getElementById('bScore').innerText = bScore;
 }
 
 function loop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#050505";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Vignette effect
+    let v = ctx.createRadialGradient(500, 275, 100, 500, 275, 600);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.8)');
+    
     drawCourt();
     player.update();
     updateBot();
@@ -241,9 +288,9 @@ function loop() {
 
     if (!ball.owner && ball.cooldown === 0) {
         [player, bot].forEach(p => {
-            let dx = p.x + p.w/2 - ball.x;
-            let dy = p.y + p.h/2 - ball.y;
-            if (Math.sqrt(dx*dx + dy*dy) < 50) {
+            let dx = (p.x + p.w/2) - ball.x;
+            let dy = (p.y + p.h/2) - ball.y;
+            if (Math.sqrt(dx*dx + dy*dy) < 45) {
                 p.hasBall = true; ball.owner = p;
             }
         });
@@ -253,6 +300,10 @@ function loop() {
     player.draw();
     bot.draw();
     ball.draw();
+    
+    ctx.fillStyle = v;
+    ctx.fillRect(0,0, canvas.width, canvas.height);
+    
     requestAnimationFrame(loop);
 }
 
