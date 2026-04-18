@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Basketball Hoops: $1M Edition</title>
+    <title>Basketball Hoops: Pro Circuit</title>
     <style>
-        body { margin: 0; background: #020202; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Arial Black', sans-serif; overflow: hidden; user-select: none; }
-        #game-wrap { position: relative; border-radius: 12px; box-shadow: 0 0 100px rgba(255, 69, 0, 0.4); overflow: hidden; }
-        canvas { background: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000 100%); cursor: none; }
+        body { margin: 0; background: #050505; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Arial Black', sans-serif; overflow: hidden; user-select: none; }
+        #game-wrap { position: relative; border-radius: 12px; box-shadow: 0 0 80px rgba(0, 229, 255, 0.2); overflow: hidden; }
+        canvas { background: radial-gradient(circle at 50% 50%, #151515 0%, #000 100%); cursor: none; }
         #hud {
-            position: absolute; top: 0; width: 100%; display: flex; justify-content: space-between; 
-            padding: 20px 50px; box-sizing: border-box; color: #fff; font-size: 40px; pointer-events: none;
-            text-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 10;
+            position: absolute; top: 0; width: 100%; display: flex; justify-content: space-between; align-items: center;
+            padding: 15px 40px; box-sizing: border-box; color: #fff; font-size: 35px; pointer-events: none; z-index: 10;
         }
-        .score-box { background: rgba(0,0,0,0.5); padding: 10px 30px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.1); }
-        .msg { position: absolute; width: 100%; text-align: center; top: 150px; font-size: 70px; font-style: italic; opacity: 0; transform: scale(0.5); transition: 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 20; text-shadow: 0 5px 20px #000; }
+        .score-box { background: rgba(0,0,0,0.7); padding: 5px 25px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.1); }
+        #timer { font-size: 50px; color: #fff; text-shadow: 0 0 15px #fff; }
+        .msg { position: absolute; width: 100%; text-align: center; top: 180px; font-size: 60px; font-style: italic; opacity: 0; transform: scale(0.5); transition: 0.2s; z-index: 20; text-shadow: 0 5px 15px #000; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -21,9 +21,10 @@
     <div id="game-wrap">
         <div id="hud">
             <div class="score-box" style="color: #00e5ff;">YOU <span id="pScore">0</span></div>
+            <div id="timer">60</div>
             <div class="score-box" style="color: #ff2a5f;">BOT <span id="bScore">0</span></div>
         </div>
-        <div id="announcer" class="msg">SLAM DUNK!</div>
+        <div id="announcer" class="msg">GAME ON!</div>
         <canvas id="gameCanvas"></canvas>
     </div>
 
@@ -31,49 +32,43 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const announcer = document.getElementById('announcer');
+const timerEl = document.getElementById('timer');
 
-canvas.width = 1100;
-canvas.height = 600;
+canvas.width = 1100; canvas.height = 600;
 
 // Game State
 const gravity = 0.5;
 const floorY = 500;
 let cameraShake = 0;
 let freezeFrames = 0;
-let particles = [];
+let timeLeft = 60;
+let gameState = 'playing'; // 'playing', 'resetting', 'gameover'
 
 let keys = {};
 window.addEventListener('keydown', e => {
+    if(gameState !== 'playing') return;
     if(e.code === 'KeyW' && !keys['KeyW']) handleJump(player);
     if(e.code === 'KeyX' && !keys['KeyX']) handleAction(player);
     keys[e.code] = true;
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
 
-class Particle {
-    constructor(x, y, color) {
-        this.x = x; this.y = y;
-        this.vx = (Math.random() - 0.5) * 15;
-        this.vy = (Math.random() - 1) * 15;
-        this.life = 1.0;
-        this.color = color;
+// Timer countdown
+const clock = setInterval(() => {
+    if (gameState === 'playing') {
+        timeLeft--;
+        timerEl.innerText = timeLeft;
+        if (timeLeft <= 0) {
+            gameState = 'gameover';
+            showMsg("TIME'S UP!", "#fff");
+            clearInterval(clock);
+        }
     }
-    update() {
-        this.vy += gravity * 0.5;
-        this.x += this.vx; this.y += this.vy;
-        this.life -= 0.03;
-    }
-    draw() {
-        ctx.globalAlpha = Math.max(0, this.life);
-        ctx.fillStyle = this.color;
-        ctx.fillRect(this.x, this.y, 6, 6);
-        ctx.globalAlpha = 1.0;
-    }
-}
+}, 1000);
 
 class Player {
     constructor(x, color, isBot = false) {
-        this.x = x; this.y = floorY - 90;
+        this.startX = x; this.x = x; this.y = floorY - 90;
         this.w = 40; this.h = 90;
         this.vx = 0; this.vy = 0;
         this.color = color;
@@ -84,22 +79,19 @@ class Player {
     }
 
     update() {
-        if (!this.isBot) {
+        if (!this.isBot && gameState === 'playing') {
             if (keys['KeyA']) this.vx = -8;
             else if (keys['KeyD']) this.vx = 8;
-            else this.vx *= 0.75; // Snappy stop
+            else this.vx *= 0.75; 
         }
 
-        this.x += this.vx;
-        this.y += this.vy;
+        this.x += this.vx; this.y += this.vy;
 
         if (this.y + this.h < floorY) {
             this.vy += gravity;
         } else {
-            if (this.vy > 5) spawnDust(this.x + this.w/2, floorY); // Landing dust
             this.y = floorY - this.h;
-            this.vy = 0;
-            this.jumpCount = 0;
+            this.vy = 0; this.jumpCount = 0;
         }
         this.x = Math.max(0, Math.min(canvas.width - this.w, this.x));
         if (this.actionTimer > 0) this.actionTimer--;
@@ -107,253 +99,158 @@ class Player {
 
     draw() {
         ctx.save();
-        // Squash and Stretch based on Y velocity
         let stretch = this.vy * 1.5; 
-        let drawW = this.w - stretch;
-        let drawH = this.h + stretch;
-        let drawX = this.x + (this.w - drawW)/2;
-        let drawY = this.y + (this.h - drawH);
+        let drawW = this.w - stretch; let drawH = this.h + stretch;
+        let drawX = this.x + (this.w - drawW)/2; let drawY = this.y + (this.h - drawH);
 
-        // Action Glow
-        if (this.actionTimer > 0) {
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = "white";
-        }
+        if (this.actionTimer > 0) { ctx.shadowBlur = 20; ctx.shadowColor = "white"; }
 
-        // Body
         ctx.fillStyle = this.color;
         ctx.fillRect(drawX, drawY, drawW, drawH);
-        
-        // Head
         ctx.fillStyle = "#fff";
-        ctx.fillRect(drawX + drawW*0.15, drawY - 35, drawW*0.7, 35);
+        ctx.fillRect(drawX + drawW*0.15, drawY - 35, drawW*0.7, 35); // Head
         ctx.restore();
 
         // Swipe visual
         if (this.actionTimer > 0 && !this.hasBall) {
             ctx.strokeStyle = "rgba(255,255,255,0.8)";
             ctx.lineWidth = 6;
-            ctx.beginPath();
-            ctx.arc(this.x + this.w/2, this.y + 30, 60, -1, 1);
-            ctx.stroke();
+            ctx.beginPath(); ctx.arc(this.x + this.w/2, this.y + 30, 60, -1, 1); ctx.stroke();
         }
     }
 }
 
 const ball = {
     x: 550, y: 200, r: 15, vx: 0, vy: 0,
-    owner: null, cooldown: 0, angle: 0, trail: [],
+    owner: null, cooldown: 0, angle: 0, pointsVal: 2, isScoring: false,
     update() {
         if (this.cooldown > 0) this.cooldown--;
         
-        // Trail Logic
-        this.trail.push({x: this.x, y: this.y});
-        if (this.trail.length > 10) this.trail.shift();
-
         if (this.owner) {
             this.x = this.owner.x + (this.owner.vx >= 0 ? 40 : -10);
             this.y = this.owner.y + 50 + Math.sin(Date.now()/60) * 20;
             this.angle += (this.owner.vx * 0.1);
         } else {
-            this.vy += gravity;
-            this.x += this.vx;
-            this.y += this.vy;
-            this.angle += (this.vx * 0.1); // Spin
+            this.vy += gravity; this.x += this.vx; this.y += this.vy;
+            this.angle += (this.vx * 0.1); 
 
-            // Bouncing
             if (this.y + this.r > floorY) {
-                this.y = floorY - this.r;
-                this.vy *= -0.7;
-                this.vx *= 0.85;
-                if (Math.abs(this.vy) > 3) spawnDust(this.x, floorY);
+                this.y = floorY - this.r; this.vy *= -0.7; this.vx *= 0.85;
             }
             if (this.x < 0 || this.x > canvas.width) this.vx *= -0.8;
         }
     },
     draw() {
-        // Draw Trail
-        ctx.beginPath();
-        for(let i=0; i<this.trail.length; i++) {
-            ctx.lineTo(this.trail[i].x, this.trail[i].y);
-        }
-        ctx.strokeStyle = "rgba(255, 140, 0, 0.4)";
-        ctx.lineWidth = this.r * 1.5;
-        ctx.lineCap = "round";
-        ctx.stroke();
-
-        // Draw Ball
         ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = "#ff5e00";
-        ctx.beginPath();
-        ctx.arc(0, 0, this.r, 0, Math.PI * 2);
-        ctx.fillStyle = "#ff6a00";
-        ctx.fill();
-        ctx.strokeStyle = "#000";
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        
-        // Ball lines
+        ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+        ctx.shadowBlur = 15; ctx.shadowColor = "#ff5e00";
+        ctx.beginPath(); ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = "#ff6a00"; ctx.fill();
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.stroke();
         ctx.beginPath(); ctx.moveTo(-this.r, 0); ctx.lineTo(this.r, 0); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0, -this.r); ctx.lineTo(0, this.r); ctx.stroke();
         ctx.restore();
     }
 };
 
-const player = new Player(200, '#00e5ff');
-const bot = new Player(900, '#ff2a5f', true);
+const player = new Player(250, '#00e5ff');
+const bot = new Player(810, '#ff2a5f', true);
 let pScore = 0, bScore = 0;
 
-function spawnDust(x, y) {
-    for(let i=0; i<5; i++) particles.push(new Particle(x, y, '#555'));
-}
-function explosion(x, y, color) {
-    for(let i=0; i<30; i++) particles.push(new Particle(x, y, color));
-    cameraShake = 15;
-}
-
 function handleJump(p) {
-    if (p.jumpCount < 2) {
-        p.vy = -13;
-        p.jumpCount++;
-        spawnDust(p.x + p.w/2, floorY);
+    if (p.jumpCount < 2 && gameState === 'playing') {
+        p.vy = -13; p.jumpCount++;
     }
 }
 
 function handleAction(p) {
+    if (gameState !== 'playing') return;
     let targetX = (p === player) ? 1000 : 100;
-    let targetY = 220; // Rim height
+    let targetY = 220; 
 
     if (p.hasBall) {
-        // Check for DUNK (in air, close to hoop)
         let distToHoop = Math.abs(p.x - targetX);
+        
+        // 3-Point Logic Check (Past radius 280)
+        ball.pointsVal = (distToHoop > 280) ? 3 : 2;
+
+        // Dunk Check
         if (p.y < floorY - 50 && distToHoop < 120) {
-            // EXECUTE DUNK
-            pScore += (p === player) ? 1 : 0;
-            bScore += (p === bot) ? 1 : 0;
-            updateScoreboard();
-            
-            p.hasBall = false;
-            ball.owner = null;
-            ball.x = targetX; ball.y = targetY + 20; // Force through net
-            ball.vx = 0; ball.vy = 10; // Smash down
-            
-            showMsg("SLAM DUNK!", "#ffcc00");
-            explosion(targetX, targetY, "#ffcc00");
-            freezeFrames = 12; // HIT STOP!
+            p.hasBall = false; ball.owner = null;
+            ball.x = targetX; ball.y = targetY - 20; 
+            ball.vx = 0; ball.vy = 15; 
+            ball.pointsVal = 2; // Dunks are always 2
+            cameraShake = 15; freezeFrames = 10;
             return;
         }
 
-        // PERFECT PARABOLA SHOOTING
-        ball.owner = null;
-        p.hasBall = false;
-        ball.cooldown = 40;
-        
-        let startX = ball.x;
-        let startY = ball.y;
-        
-        // Calculate physics for a perfect, high-arcing shot
-        let peakY = Math.min(startY, targetY) - 180; // Always high arc
-        let h = startY - peakY;
-        ball.vy = -Math.sqrt(2 * gravity * h); // Velocity to reach peak
-        
+        // Shoot Logic
+        ball.owner = null; p.hasBall = false; ball.cooldown = 40;
+        let peakY = Math.min(ball.y, targetY) - 180; 
+        let h = ball.y - peakY;
+        ball.vy = -Math.sqrt(2 * gravity * h); 
         let tUp = Math.abs(ball.vy) / gravity;
         let tDown = Math.sqrt(2 * (targetY - peakY) / gravity);
-        let totalTime = tUp + tDown;
-        
-        ball.vx = (targetX - startX) / totalTime; // Perfect horizontal velocity
+        ball.vx = (targetX - ball.x) / (tUp + tDown); 
         
     } else {
-        // STEAL / BLOCK
+        // Steal/Block
         p.actionTimer = 12;
         let opp = (p === player) ? bot : player;
-        let dist = Math.hypot(p.x - opp.x, p.y - opp.y);
-        
-        if (dist < 90 && opp.hasBall) {
-            opp.hasBall = false;
-            ball.owner = null;
-            ball.vx = (p.x < opp.x ? -8 : 8);
-            ball.vy = -8;
-            ball.cooldown = 30;
-            showMsg("BLOCKED!", "#fff");
-            cameraShake = 5;
-            freezeFrames = 3;
+        if (Math.hypot(p.x - opp.x, p.y - opp.y) < 90 && opp.hasBall) {
+            opp.hasBall = false; ball.owner = null;
+            ball.vx = (p.x < opp.x ? -8 : 8); ball.vy = -8; ball.cooldown = 30;
+            showMsg("BLOCKED!", "#fff"); cameraShake = 5; freezeFrames = 5;
         }
     }
 }
 
 function showMsg(txt, color) {
-    announcer.innerText = txt;
-    announcer.style.color = color;
-    announcer.style.opacity = 1;
-    announcer.style.transform = "scale(1)";
-    setTimeout(() => {
-        announcer.style.opacity = 0;
-        announcer.style.transform = "scale(0.5)";
-    }, 1200);
-}
-
-function updateScoreboard() {
-    document.getElementById('pScore').innerText = pScore;
-    document.getElementById('bScore').innerText = bScore;
+    announcer.innerText = txt; announcer.style.color = color;
+    announcer.style.opacity = 1; announcer.style.transform = "scale(1)";
+    setTimeout(() => { announcer.style.opacity = 0; announcer.style.transform = "scale(0.5)"; }, 1500);
 }
 
 function drawCourt() {
-    // Floor
-    ctx.fillStyle = "#111";
-    ctx.fillRect(0, floorY, canvas.width, canvas.height - floorY);
-    
-    // Glowing Court Lines
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-    ctx.lineWidth = 4;
+    ctx.fillStyle = "#111"; ctx.fillRect(0, floorY, canvas.width, canvas.height - floorY);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)"; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(canvas.width, floorY); ctx.stroke();
-    
-    // Center logic
     ctx.beginPath(); ctx.moveTo(canvas.width/2, floorY); ctx.lineTo(canvas.width/2, floorY+100); ctx.stroke();
 
-    drawHoop(100, 220, true);
-    drawHoop(1000, 220, false);
+    // 3-Point Lines
+    ctx.beginPath(); ctx.arc(100, floorY, 280, 0, -Math.PI/2, true); ctx.stroke();
+    ctx.beginPath(); ctx.arc(1000, floorY, 280, Math.PI, Math.PI*1.5); ctx.stroke();
+
+    drawHoop(100, 220, true); drawHoop(1000, 220, false);
 }
 
 function drawHoop(x, y, isLeft) {
-    // Glass Backboard
-    ctx.fillStyle = "rgba(0, 200, 255, 0.1)";
-    ctx.fillRect(isLeft ? x-20 : x, y-90, 20, 130);
-    ctx.strokeStyle = "rgba(0, 200, 255, 0.8)";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(isLeft ? x-20 : x, y-90, 20, 130);
-
-    // Rim
-    ctx.strokeStyle = "#ff2a5f";
-    ctx.lineWidth = 6;
-    ctx.lineCap = "round";
+    ctx.fillStyle = "rgba(0, 200, 255, 0.1)"; ctx.fillRect(isLeft ? x-20 : x, y-90, 20, 130);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)"; ctx.strokeRect(isLeft ? x-20 : x, y-90, 20, 130);
+    ctx.strokeStyle = "#ff2a5f"; ctx.lineWidth = 6; ctx.lineCap = "round";
     ctx.beginPath(); ctx.moveTo(isLeft ? x : x-60, y); ctx.lineTo(isLeft ? x+60 : x, y); ctx.stroke();
-
-    // Dynamic Net
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
-    ctx.lineWidth = 2;
+    
+    // Net
+    ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 2;
     for(let i=0; i<5; i++) {
-        ctx.beginPath();
-        let nx = isLeft ? x + (i*15) : x - 60 + (i*15);
+        ctx.beginPath(); let nx = isLeft ? x + (i*15) : x - 60 + (i*15);
         ctx.moveTo(nx, y);
-        let sway = ball.vy > 0 && Math.abs(ball.x - nx) < 50 && Math.abs(ball.y - y) < 50 ? 15 : Math.sin(Date.now()/150 + i)*2;
-        ctx.quadraticCurveTo(nx + sway, y + 30, nx + sway*0.5, y + 60);
-        ctx.stroke();
+        let sway = (ball.vy > 0 && Math.abs(ball.x - nx) < 40 && Math.abs(ball.y - y) < 50) ? 15 : 0;
+        ctx.quadraticCurveTo(nx + sway, y + 30, nx + sway*0.5, y + 60); ctx.stroke();
     }
 }
 
 function updateBot() {
+    if (gameState !== 'playing') { bot.vx *= 0.9; bot.update(); return; }
+    
     let dToBall = ball.x - bot.x;
     if (!ball.owner && ball.cooldown === 0) {
-        bot.vx = dToBall > 0 ? 5 : -5;
-        if (ball.y < bot.y && Math.abs(dToBall) < 50 && bot.jumpCount === 0) handleJump(bot); // Bot jumps for rebounds
+        bot.vx = dToBall > 0 ? 5.5 : -5.5;
+        if (ball.y < bot.y && Math.abs(dToBall) < 50 && bot.jumpCount === 0) handleJump(bot); 
     } else if (bot.hasBall) {
         if (bot.x > 300) bot.vx = -6;
         else {
             bot.vx = 0;
-            // Bot decides to dunk or shoot
             if (bot.x < 200 && bot.jumpCount === 0) handleJump(bot);
             if (bot.y < floorY - 20 || bot.x > 250) handleAction(bot); 
         }
@@ -365,63 +262,70 @@ function updateBot() {
     bot.update();
 }
 
+function triggerScore(isPlayer, pts) {
+    if (ball.isScoring) return; // Prevent double-counting the dunk
+    ball.isScoring = true;
+    gameState = 'resetting';
+
+    if (isPlayer) {
+        pScore += pts; 
+        showMsg((pts===3) ? "3-POINTER!" : "SCORE!", "#00e5ff");
+    } else {
+        bScore += pts; 
+        showMsg((pts===3) ? "3-POINTER!" : "SCORE!", "#ff2a5f");
+    }
+    document.getElementById('pScore').innerText = pScore;
+    document.getElementById('bScore').innerText = bScore;
+    
+    setTimeout(() => resetPositions(!isPlayer), 1500); // Wait 1.5s, then reset
+}
+
 function checkScoring() {
-    if (ball.vy > 0) {
-        // Player scores right (1000)
-        if (ball.x > 960 && ball.x < 1040 && Math.abs(ball.y - 220) < 15) {
-            pScore++; updateScoreboard(); showMsg("SWISH!", "#00e5ff"); explosion(1000, 220, "#00e5ff"); resetBall();
-        }
-        // Bot scores left (100)
-        if (ball.x < 140 && ball.x > 60 && Math.abs(ball.y - 220) < 15) {
-            bScore++; updateScoreboard(); showMsg("SCORE!", "#ff2a5f"); explosion(100, 220, "#ff2a5f"); resetBall();
-        }
+    if (ball.vy > 0 && !ball.isScoring) {
+        // Right Hoop (Player)
+        if (ball.x > 960 && ball.x < 1040 && Math.abs(ball.y - 220) < 15) triggerScore(true, ball.pointsVal);
+        // Left Hoop (Bot)
+        if (ball.x < 140 && ball.x > 60 && Math.abs(ball.y - 220) < 15) triggerScore(false, ball.pointsVal);
     }
 }
 
-function resetBall() {
-    ball.x = canvas.width/2; ball.y = -50; ball.vx = 0; ball.vy = 0;
-    ball.owner = null; player.hasBall = false; bot.hasBall = false; ball.trail = [];
+function resetPositions(playerGetsBall) {
+    if (gameState === 'gameover') return;
+    player.x = player.startX; player.y = floorY - player.h; player.vx = 0; player.vy = 0;
+    bot.x = bot.startX; bot.y = floorY - bot.h; bot.vx = 0; bot.vy = 0;
+    
+    ball.owner = playerGetsBall ? player : bot;
+    ball.owner.hasBall = true;
+    ball.isScoring = false;
+    ball.vx = 0; ball.vy = 0;
+    gameState = 'playing';
 }
+
+// Initial jump ball
+setTimeout(() => { ball.vy = -15; ball.cooldown = 20; }, 1000);
 
 function loop() {
-    // Hit Stop Logic
-    if (freezeFrames > 0) {
-        freezeFrames--;
-        requestAnimationFrame(loop);
-        return;
+    if (freezeFrames > 0) { freezeFrames--; } 
+    else {
+        player.update(); updateBot(); ball.update();
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.4)"; // Trailing motion blur background
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
-    // Camera Shake
-    if (cameraShake > 0) {
-        ctx.translate((Math.random()-0.5)*cameraShake, (Math.random()-0.5)*cameraShake);
-        cameraShake *= 0.8;
-        if (cameraShake < 0.5) cameraShake = 0;
-    }
+    if (cameraShake > 0) { ctx.translate((Math.random()-0.5)*cameraShake, (Math.random()-0.5)*cameraShake); cameraShake *= 0.8; if (cameraShake < 0.5) cameraShake = 0; }
 
     drawCourt();
-    player.update(); updateBot(); ball.update();
 
-    // Pickup logic
-    if (!ball.owner && ball.cooldown === 0 && ball.y > 0) {
+    if (!ball.owner && ball.cooldown === 0 && ball.y > 0 && gameState === 'playing') {
         [player, bot].forEach(p => {
             if (Math.hypot((p.x + p.w/2) - ball.x, (p.y + p.h/2) - ball.y) < 55) {
-                p.hasBall = true; ball.owner = p; ball.trail = [];
+                p.hasBall = true; ball.owner = p; ball.isScoring = false;
             }
         });
     }
 
     checkScoring();
-
-    // Particles
-    for(let i = particles.length-1; i >= 0; i--) {
-        particles[i].update(); particles[i].draw();
-        if(particles[i].life <= 0) particles.splice(i, 1);
-    }
-
     bot.draw(); player.draw(); ball.draw();
     ctx.restore();
     
